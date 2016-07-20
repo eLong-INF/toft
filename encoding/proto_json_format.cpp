@@ -70,11 +70,12 @@ static void CreateNode(const FieldDescriptor* field,
     }
 }
 
-static void CreateNodeOfRepeatedField(const FieldDescriptor* field,
+static void CreateNodeOfRepeatedFiled(const FieldDescriptor* field,
                                       const Reflection* reflection,
                                       const Message& message,
                                       int index,
                                       Json::Value* node) {
+    Json::Value root;
     switch (field->cpp_type()) {
     case FieldDescriptor::CPPTYPE_INT32:
         node->append(reflection->GetRepeatedInt32(message, field, index));
@@ -106,7 +107,8 @@ static void CreateNodeOfRepeatedField(const FieldDescriptor* field,
         node->append(reflection->GetRepeatedString(message, field, index));
         break;
     case FieldDescriptor::CPPTYPE_MESSAGE:
-        CHECK(false)<< "not reachable";
+        ProtoJsonFormat::WriteToValue(reflection->GetRepeatedMessage(message, field, index), &root);
+        node->append(root);
         break;
     default:
         CHECK(false) << "bad type:" << field->cpp_type();
@@ -124,32 +126,20 @@ bool ProtoJsonFormat::WriteToValue(const Message& message, Json::Value* root) {
         const FieldDescriptor* field = fields[i];
         const std::string& field_name = field->name();
 
-        if (field->cpp_type() != FieldDescriptor::CPPTYPE_MESSAGE) {
-            if (field->is_repeated()) {
-                Json::Value node;
-                int field_size = reflection->FieldSize(message, field);
-                for (int k = 0; k < field_size; ++k) {
-                    CreateNodeOfRepeatedField(field, reflection, message, k, &node);
-                }
-                (*root)[field_name] = node;
-            } else {
-                CreateNode(field, reflection, message, root);
-            }
+        if (field->is_repeated()) {
+          Json::Value node;
+          int field_size = reflection->FieldSize(message, field);
+          for (int k = 0; k < field_size; ++k) {
+            CreateNodeOfRepeatedFiled(field, reflection, message, k, &node);
+          }
+          (*root)[field_name] = node;
         } else {
-            if (field->is_repeated()) {
-                Json::Value node;
-                for (int i = 0; i < reflection->FieldSize(message, field); ++i) {
-                    Json::Value sub_node;
-                    const Message& sub_message = reflection->GetRepeatedMessage(message,
-                                                                                field, i);
-                    WriteToValue(sub_message, &sub_node);
-                    node.append(sub_node);
-                }
-                (*root)[field_name] = node;
-            } else {
-                const Message& sub_message = reflection->GetMessage(message, field);
-                WriteToValue(sub_message, &((*root)[field_name]));
-            }
+          if (field->cpp_type() != FieldDescriptor::CPPTYPE_MESSAGE) {
+            CreateNode(field, reflection, message, root);
+          } else {
+            const Message& sub_message = reflection->GetMessage(message, field);
+            WriteToValue(sub_message, &((*root)[field_name]));
+          }
         }
     }
     return true;
@@ -350,5 +340,4 @@ bool ProtoJsonFormat::ParseFromString(const std::string& input, Message* pb) {
 bool ProtoJsonFormat::ParseFromValue(const Json::Value& input, Message* output) {
     return ParseFromJsonValue(input, output);
 }
-
 }  // namespace toft
